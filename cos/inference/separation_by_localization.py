@@ -99,7 +99,7 @@ def forward_pass(model, target_angle, mixed_data, conditioning_label, args):
     output_voices = output_signal[:, 0]  # batch x n_mics x n_samples
 
     output_np = output_voices.detach().cpu().numpy()[0]
-    energy = librosa.feature.rms(output_np).mean()
+    energy = librosa.feature.rms(y=output_np).mean()
 
     return output_np, energy
 
@@ -113,7 +113,12 @@ def run_separation(mixed_data, model, args,
     # Get the initial candidates
     num_windows = len(ALL_WINDOW_SIZES) if not args.moving else 3
     starting_angles = utils.get_starting_angles(ALL_WINDOW_SIZES[0])
+    
+    starting_angles = starting_angles[-2:] # 45度と135度
+    
     candidate_voices = [CandidateVoice(x, None, None) for x in starting_angles]
+    print("candidate", candidate_voices)
+    print("starting angles", starting_angles)
 
     # All steps of the binary search
     for window_idx in range(num_windows):
@@ -123,6 +128,7 @@ def run_separation(mixed_data, model, args,
             window_idx, 5)).float().to(args.device).unsqueeze(0)
 
         curr_window_size = ALL_WINDOW_SIZES[window_idx]
+        print("window: ", curr_window_size)
         new_candidate_voices = []
 
         # Iterate over all the potential locations
@@ -187,15 +193,26 @@ def run_separation(mixed_data, model, args,
 
 
 def main(args):
+    print("use cuda", args.use_cuda)
+    shouldSave = args.save
+    
     device = torch.device('cuda') if args.use_cuda else torch.device('cpu')
 
     args.device = device
     model = CoSNetwork(n_audio_channels=args.n_channels)
-    model.load_state_dict(torch.load(args.model_checkpoint), strict=True, map_location=args.device)
-    model.train = False
+    # ★ CPUへ確実にマップ（文字列 'cpu' を使うと古いckptでも堅い）
+    state = torch.load(args.model_checkpoint, map_location='cpu')
+
+    # ★ ckptが {"state_dict": ...} 形式の可能性に対応
+    if isinstance(state, dict) and 'state_dict' in state:
+        state = state['state_dict']
+
+    model.load_state_dict(state, strict=True)
+
+    model.eval()          # ← model.train = False よりこちらが確実
     model.to(device)
 
-    if not os.path.exists(args.output_dir):
+    if not os.path.exists(args.output_dir) and shouldSave:
         os.makedirs(args.output_dir)
 
     mixed_data = librosa.core.load(args.input_file, mono=False, sr=args.sr)[0]
@@ -216,17 +233,20 @@ def main(args):
                                      temporal_chunk_size]
 
         output_voices = run_separation(curr_mixed_data, model, args)
-        for voice in output_voices:
-            fname = "output_angle{:.2f}.wav".format(
-                voice.angle * 180 / np.pi)
-            sf.write(os.path.join(args.writing_dir, fname), voice.data[0],
-                     args.sr)
+        if shouldSave:
+            for voice in output_voices:
+                fname = "output_angle{:.2f}.wav".format(
+                    voice.angle * 180 / np.pi)
+                sf.write(os.path.join(args.writing_dir, fname), voice.data[0],
+                         args.sr)
 
-        candidate_angles = [voice.angle for voice in output_voices]
-        diagram_window_angle = ALL_WINDOW_SIZES[2] if args.moving else ALL_WINDOW_SIZES[-1]
-        draw_diagram([], candidate_angles,
-                    diagram_window_angle,
-                    os.path.join(args.writing_dir, "positions.png".format(chunk_idx)))
+        
+        if shouldSave:
+            candidate_angles = [voice.angle for voice in output_voices]
+            diagram_window_angle = ALL_WINDOW_SIZES[2] if args.moving else ALL_WINDOW_SIZES[-1]
+            draw_diagram([], candidate_angles,
+                         diagram_window_angle,
+                         os.path.join(args.writing_dir, "positions.png".format(chunk_idx)))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -246,6 +266,10 @@ if __name__ == '__main__':
                         dest='use_cuda',
                         action='store_true',
                         help="Whether to use cuda")
+    parser.add_argument('--save',
+                        dest='save',
+                        action='store_true',
+                        help="save output and draw image")
     parser.add_argument('--debug',
                         action='store_true',
                         help="Save intermediate outputs")

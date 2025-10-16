@@ -11,10 +11,10 @@ FAR_FIELD_RADIUS = 3.0  # meters, assume larger the mic array radius
 # Algorithmic Constants
 ALL_WINDOW_SIZES = [
     np.pi / 2,  # 90 degrees
-    np.pi / 4,  # 45 degrees
-    np.pi / 8,  # 22.5 degrees
-    np.pi / 16,  # 11.25 degrees
-    np.pi / 32,  # 5.625 degrees
+    # np.pi / 4,  # 45 degrees
+    # np.pi / 8,  # 22.5 degrees
+    # np.pi / 16,  # 11.25 degrees
+    # np.pi / 32,  # 5.625 degrees
 ]
 
 def get_mic_diagram():

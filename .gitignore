@@ -19,3 +19,4 @@ __pycache__/
 
 # Data Files
 *.npy
+/outputs/demo_run/
