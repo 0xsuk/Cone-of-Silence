@@ -23,7 +23,7 @@ from cos.training.network import CoSNetwork, center_trim, \
 from cos.helpers.eval_utils import si_sdr
 
 # Constants which may be tweaked based on your setup
-ENERGY_CUTOFF = 0.002
+ENERGY_CUTOFF = 0.00001
 NMS_RADIUS = np.pi / 4
 NMS_SIMILARITY_SDR = -7.0  # SDR cutoff for different candidates
 
@@ -114,7 +114,7 @@ def run_separation(mixed_data, model, args,
     num_windows = len(ALL_WINDOW_SIZES) if not args.moving else 3
     starting_angles = utils.get_starting_angles(ALL_WINDOW_SIZES[0])
     
-    starting_angles = starting_angles[-2:] # 45度と135度
+    # starting_angles = starting_angles[-2:] # 45度と135度
     
     candidate_voices = [CandidateVoice(x, None, None) for x in starting_angles]
     print("candidate", candidate_voices)
@@ -140,8 +140,8 @@ def run_separation(mixed_data, model, args,
                 print("Angle {:.2f} energy {}".format(voice.angle, energy))
                 fname = "out{}_angle{:.2f}.wav".format(
                     window_idx, voice.angle * 180 / np.pi)
-                # sf.write(os.path.join(args.writing_dir, fname), output[0],
-                #          args.sr)
+                sf.write(os.path.join(args.writing_dir, fname), output[0],
+                         args.sr)
 
             # If there was something there
             if energy > energy_cutoff:
