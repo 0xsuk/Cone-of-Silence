@@ -114,7 +114,7 @@ def run_separation(mixed_data, model, args,
     num_windows = len(ALL_WINDOW_SIZES) if not args.moving else 3
     starting_angles = utils.get_starting_angles(ALL_WINDOW_SIZES[0])
     
-    # starting_angles = starting_angles[-2:] # 45度と135度
+    starting_angles = starting_angles[-2:] # 45度と135度
     
     candidate_voices = [CandidateVoice(x, None, None) for x in starting_angles]
     print("candidate", candidate_voices)
