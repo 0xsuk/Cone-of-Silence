@@ -2,6 +2,7 @@
 The main separation by localization inference algorithm
 """
 
+import time
 import argparse
 import os
 
@@ -92,7 +93,10 @@ def forward_pass(model, target_angle, mixed_data, conditioning_label, args):
     delta = valid_length - data.shape[-1]
     padded = F.pad(data, (delta // 2, delta - delta // 2))
 
+    start = time.time()
     output_signal = model(padded, conditioning_label)
+    end = time.time()
+    print(f"Execution time: {end - start:.4f} seconds")
     output_signal = center_trim(output_signal, data)
 
     output_signal = unnormalize_input(output_signal, means, stds)
@@ -199,17 +203,17 @@ def main(args):
     device = torch.device('cuda') if args.use_cuda else torch.device('cpu')
 
     args.device = device
-    model = CoSNetwork(n_audio_channels=args.n_channels)
-    # ★ CPUへ確実にマップ（文字列 'cpu' を使うと古いckptでも堅い）
-    state = torch.load(args.model_checkpoint, map_location='cpu')
+    model = None
+    if args.quantized:
+        print("quantized")
+        model = torch.load(args.model_checkpoint, map_location='cpu')
+    else:
+        model = CoSNetwork(n_audio_channels=args.n_channels)
+        state = torch.load(args.model_checkpoint, map_location='cpu')
 
-    # ★ ckptが {"state_dict": ...} 形式の可能性に対応
-    if isinstance(state, dict) and 'state_dict' in state:
-        state = state['state_dict']
+        model.load_state_dict(state)
 
-    model.load_state_dict(state, strict=True)
-
-    model.eval()          # ← model.train = False よりこちらが確実
+    model.eval()
     model.to(device)
 
     if not os.path.exists(args.output_dir) and shouldSave:
@@ -266,6 +270,10 @@ if __name__ == '__main__':
                         dest='use_cuda',
                         action='store_true',
                         help="Whether to use cuda")
+    parser.add_argument('--quantized',
+                        dest='quantized',
+                        action='store_true',
+                        help="Whether to use quantized model")
     parser.add_argument('--save',
                         dest='save',
                         action='store_true',

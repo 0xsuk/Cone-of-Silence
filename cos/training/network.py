@@ -182,7 +182,9 @@ class CoSNetwork(nn.Module):
 
         # Bi-directional LSTM at the bottleneck layer
         x = x.permute(2, 0, 1)  # prep input for LSTM
-        self.lstm.flatten_parameters()  # to improve memory usage.
+        
+        if hasattr(self.lstm, "flatten_parameters"):
+            self.lstm.flatten_parameters()
         x = self.lstm(x)[0]
         x = self.lstm_linear(x)
         x = x.permute(1, 2, 0)
