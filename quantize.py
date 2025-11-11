@@ -11,7 +11,9 @@ model.eval()
 # 2) 動的量子化（x86はfbgemm、ARMはqnnpackを想定）
 torch.backends.quantized.engine = "qnnpack"  # or "|fbgemm"
 qmodel = torch.quantization.quantize_dynamic(
-    model, {nn.Linear, nn.LSTM}, dtype=torch.qint8
+    model, {nn.Linear, nn.LSTM}, dtype=torch.qint8,
+    reduce_range=False #raspiでfalseじゃないと[W qlinear_dynamic.cpp:239] Warning: Currently, qnnpack incorrectly ignores reduce_range when it is set to true; this may change in a future release. (function apply_dynamic_impl)
+
 )
 
 # 3) 保存と推論
