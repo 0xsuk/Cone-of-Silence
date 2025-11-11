@@ -108,6 +108,62 @@ def forward_pass(model, target_angle, mixed_data, conditioning_label, args):
     return output_np, energy
 
 
+def separate(candidate_voices, model, mixed_data, conditioning_label, args, window_idx, energy_cutoff, num_windows, new_candidate_voices, curr_window_size):
+    for voice in candidate_voices:
+        output, energy = forward_pass(model, voice.angle, mixed_data,
+                                      conditioning_label, args)
+
+        if args.debug:
+            print("Angle {:.2f} energy {}".format(voice.angle, energy))
+            fname = "out{}_angle{:.2f}.wav".format(
+                window_idx, voice.angle * 180 / np.pi)
+            sf.write(os.path.join(args.writing_dir, fname), output[0],
+                     args.sr)
+
+        # If there was something there
+        if energy > energy_cutoff:
+
+            # We're done searching so undo the shifts
+            if window_idx == num_windows - 1:
+                target_pos = np.array([
+                    FAR_FIELD_RADIUS * np.cos(voice.angle),
+                    FAR_FIELD_RADIUS * np.sin(voice.angle)
+                ])
+                unshifted_output, _ = utils.shift_mixture(output,
+                                                       target_pos,
+                                                       args.mic_radius,
+                                                       args.sr,
+                                                       inverse=True)
+
+                new_candidate_voices.append(
+                    CandidateVoice(voice.angle, energy, unshifted_output))
+
+            # Split region and recurse.
+            # You can either split strictly (fourths)
+            # or with some redundancy (thirds)
+            else:
+                # new_candidate_voices.append(
+                #     CandidateVoice(
+                #         voice.angle + curr_window_size / 3,
+                #         energy, output))
+                # new_candidate_voices.append(
+                #     CandidateVoice(
+                #         voice.angle - curr_window_size / 3,
+                #         energy, output))
+                # new_candidate_voices.append(
+                #     CandidateVoice(
+                #         voice.angle,
+                #         energy, output))
+                new_candidate_voices.append(
+                    CandidateVoice(
+                        voice.angle + curr_window_size / 4,
+                        energy, output))
+                new_candidate_voices.append(
+                    CandidateVoice(
+                        voice.angle - curr_window_size / 4,
+                        energy, output))
+
+
 def run_separation(mixed_data, model, args,
                    energy_cutoff=ENERGY_CUTOFF,
                    nms_cutoff=NMS_SIMILARITY_SDR): # yapf: disable
@@ -136,59 +192,17 @@ def run_separation(mixed_data, model, args,
         new_candidate_voices = []
 
         # Iterate over all the potential locations
-        for voice in candidate_voices:
-            output, energy = forward_pass(model, voice.angle, mixed_data,
-                                          conditioning_label, args)
-
-            if args.debug:
-                print("Angle {:.2f} energy {}".format(voice.angle, energy))
-                fname = "out{}_angle{:.2f}.wav".format(
-                    window_idx, voice.angle * 180 / np.pi)
-                sf.write(os.path.join(args.writing_dir, fname), output[0],
-                         args.sr)
-
-            # If there was something there
-            if energy > energy_cutoff:
-
-                # We're done searching so undo the shifts
-                if window_idx == num_windows - 1:
-                    target_pos = np.array([
-                        FAR_FIELD_RADIUS * np.cos(voice.angle),
-                        FAR_FIELD_RADIUS * np.sin(voice.angle)
-                    ])
-                    unshifted_output, _ = utils.shift_mixture(output,
-                                                           target_pos,
-                                                           args.mic_radius,
-                                                           args.sr,
-                                                           inverse=True)
-
-                    new_candidate_voices.append(
-                        CandidateVoice(voice.angle, energy, unshifted_output))
-
-                # Split region and recurse.
-                # You can either split strictly (fourths)
-                # or with some redundancy (thirds)
-                else:
-                    # new_candidate_voices.append(
-                    #     CandidateVoice(
-                    #         voice.angle + curr_window_size / 3,
-                    #         energy, output))
-                    # new_candidate_voices.append(
-                    #     CandidateVoice(
-                    #         voice.angle - curr_window_size / 3,
-                    #         energy, output))
-                    # new_candidate_voices.append(
-                    #     CandidateVoice(
-                    #         voice.angle,
-                    #         energy, output))
-                    new_candidate_voices.append(
-                        CandidateVoice(
-                            voice.angle + curr_window_size / 4,
-                            energy, output))
-                    new_candidate_voices.append(
-                        CandidateVoice(
-                            voice.angle - curr_window_size / 4,
-                            energy, output))
+        separate(candidate_voices=candidate_voices,
+                 model=model,
+                 mixed_data=mixed_data,
+                 conditioning_label=conditioning_label,
+                 args=args,
+                 window_idx=window_idx,
+                 energy_cutoff=energy_cutoff,
+                 num_windows=num_windows,
+                 new_candidate_voices=new_candidate_voices,
+                 curr_window_size=curr_window_size
+                 )
 
         candidate_voices = new_candidate_voices
 
