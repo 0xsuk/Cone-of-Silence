@@ -248,7 +248,11 @@ def main(args):
                                          temporal_chunk_size):(chunk_idx + 1) *
                                      temporal_chunk_size]
 
+        print("running separation")
+        start = time.time()
         output_voices = run_separation(curr_mixed_data, model, args)
+        end = time.time()
+        print(f"TOTAL Execution time: {end - start:.4f} seconds")
         if shouldSave:
             for voice in output_voices:
                 fname = "output_angle{:.2f}.wav".format(
