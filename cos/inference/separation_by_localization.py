@@ -176,6 +176,7 @@ def run_separation(mixed_data, model, args,
     print("candidate", candidate_voices)
     print("starting angles", starting_angles)
 
+    start = time.time()
     # All steps of the binary search
     for window_idx in range(num_windows):
         if args.debug:
@@ -203,6 +204,8 @@ def run_separation(mixed_data, model, args,
         candidate_voices = new_candidate_voices
 
     # Run NMS on the final output and return
+    end = time.time()
+    print(f"run_separation: {end - start:.4f} seconds")
     return nms(candidate_voices, nms_cutoff)
 
 
@@ -237,6 +240,8 @@ def main(args):
     temporal_chunk_size = int(args.sr * args.duration)
     num_chunks = (mixed_data.shape[1] // temporal_chunk_size) + 1
 
+    total_time = 0.0
+    
     for chunk_idx in range(num_chunks):
         curr_writing_dir = os.path.join(args.output_dir,
                                         "{:03d}".format(chunk_idx))
@@ -251,8 +256,9 @@ def main(args):
         print("running separation")
         start = time.time()
         output_voices = run_separation(curr_mixed_data, model, args)
-        end = time.time()
-        print(f"TOTAL Execution time: {end - start:.4f} seconds")
+        elapsed = time.time() - start
+        total_time += elapsed
+        
         if shouldSave:
             for voice in output_voices:
                 fname = "output_angle{:.2f}.wav".format(
@@ -267,6 +273,8 @@ def main(args):
             draw_diagram([], candidate_angles,
                          diagram_window_angle,
                          os.path.join(args.writing_dir, "positions.png".format(chunk_idx)))
+
+    print(f"TOTAL processing time: {total_time:.4f} seconds")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
