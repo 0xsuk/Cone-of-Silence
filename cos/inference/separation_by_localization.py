@@ -146,18 +146,27 @@ def process_voice(voice, model, mixed_data, conditioning_label, args,
 
 def separate(candidate_voices, model, mixed_data, conditioning_label, args,
              window_idx, energy_cutoff, num_windows, new_candidate_voices,
-             curr_window_size):
-    with ThreadPoolExecutor() as executor:
-        futures = [
-            executor.submit(
-                process_voice,
+             curr_window_size, parallel=True):
+    
+    if parallel:
+        with ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(
+                    process_voice,
+                    voice, model, mixed_data, conditioning_label, args,
+                    window_idx, energy_cutoff, num_windows, curr_window_size
+                )
+                for voice in candidate_voices
+            ]
+            for future in as_completed(futures):
+                new_candidate_voices.extend(future.result())
+    else:
+        for voice in candidate_voices:
+            result = process_voice(
                 voice, model, mixed_data, conditioning_label, args,
                 window_idx, energy_cutoff, num_windows, curr_window_size
             )
-            for voice in candidate_voices
-        ]
-        for future in as_completed(futures):
-            new_candidate_voices.extend(future.result())
+            new_candidate_voices.extend(result)
 
 
 def run_separation(mixed_data, model, args,
