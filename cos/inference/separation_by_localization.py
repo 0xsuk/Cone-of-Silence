@@ -108,60 +108,56 @@ def forward_pass(model, target_angle, mixed_data, conditioning_label, args):
     return output_np, energy
 
 
-def separate(candidate_voices, model, mixed_data, conditioning_label, args, window_idx, energy_cutoff, num_windows, new_candidate_voices, curr_window_size):
-    for voice in candidate_voices:
-        output, energy = forward_pass(model, voice.angle, mixed_data,
-                                      conditioning_label, args)
+from concurrent.futures import ThreadPoolExecutor,as_completed
 
-        if args.debug:
-            print("Angle {:.2f} energy {}".format(voice.angle, energy))
-            fname = "out{}_angle{:.2f}.wav".format(
-                window_idx, voice.angle * 180 / np.pi)
-            sf.write(os.path.join(args.writing_dir, fname), output[0],
-                     args.sr)
+def process_voice(voice, model, mixed_data, conditioning_label, args,
+                  window_idx, energy_cutoff, num_windows, curr_window_size):
+    output, energy = forward_pass(model, voice.angle, mixed_data,
+                                  conditioning_label, args)
+    results = []
 
-        # If there was something there
-        if energy > energy_cutoff:
+    if args.debug:
+        print(f"Angle {voice.angle:.2f} energy {energy}")
+        fname = f"out{window_idx}_angle{voice.angle * 180 / np.pi:.2f}.wav"
+        sf.write(os.path.join(args.writing_dir, fname), output[0], args.sr)
 
-            # We're done searching so undo the shifts
-            if window_idx == num_windows - 1:
-                target_pos = np.array([
-                    FAR_FIELD_RADIUS * np.cos(voice.angle),
-                    FAR_FIELD_RADIUS * np.sin(voice.angle)
-                ])
-                unshifted_output, _ = utils.shift_mixture(output,
-                                                       target_pos,
-                                                       args.mic_radius,
-                                                       args.sr,
-                                                       inverse=True)
+    if energy > energy_cutoff:
+        if window_idx == num_windows - 1:
+            target_pos = np.array([
+                FAR_FIELD_RADIUS * np.cos(voice.angle),
+                FAR_FIELD_RADIUS * np.sin(voice.angle)
+            ])
+            unshifted_output, _ = utils.shift_mixture(
+                output, target_pos, args.mic_radius, args.sr, inverse=True
+            )
+            results.append(CandidateVoice(voice.angle, energy,
+                                          unshifted_output))
+        else:
+            results.append(
+                CandidateVoice(voice.angle + curr_window_size / 4, energy,
+                               output)
+            )
+            results.append(
+                CandidateVoice(voice.angle - curr_window_size / 4, energy,
+                               output)
+            )
+    return results
 
-                new_candidate_voices.append(
-                    CandidateVoice(voice.angle, energy, unshifted_output))
 
-            # Split region and recurse.
-            # You can either split strictly (fourths)
-            # or with some redundancy (thirds)
-            else:
-                # new_candidate_voices.append(
-                #     CandidateVoice(
-                #         voice.angle + curr_window_size / 3,
-                #         energy, output))
-                # new_candidate_voices.append(
-                #     CandidateVoice(
-                #         voice.angle - curr_window_size / 3,
-                #         energy, output))
-                # new_candidate_voices.append(
-                #     CandidateVoice(
-                #         voice.angle,
-                #         energy, output))
-                new_candidate_voices.append(
-                    CandidateVoice(
-                        voice.angle + curr_window_size / 4,
-                        energy, output))
-                new_candidate_voices.append(
-                    CandidateVoice(
-                        voice.angle - curr_window_size / 4,
-                        energy, output))
+def separate(candidate_voices, model, mixed_data, conditioning_label, args,
+             window_idx, energy_cutoff, num_windows, new_candidate_voices,
+             curr_window_size):
+    with ThreadPoolExecutor() as executor:
+        futures = [
+            executor.submit(
+                process_voice,
+                voice, model, mixed_data, conditioning_label, args,
+                window_idx, energy_cutoff, num_windows, curr_window_size
+            )
+            for voice in candidate_voices
+        ]
+        for future in as_completed(futures):
+            new_candidate_voices.extend(future.result())
 
 
 def run_separation(mixed_data, model, args,
