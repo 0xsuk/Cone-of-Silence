@@ -228,8 +228,8 @@ def main(args):
     model = None
     if args.quantized:
         print("quantized")
-        print("using qnnpack")
-        torch.backends.quantized.engine = "qnnpack"
+        # print("using qnnpack")
+        torch.backends.quantized.engine = "fbgemm"
         model = torch.load(args.model_checkpoint, map_location='cpu')
     else:
         model = CoSNetwork(n_audio_channels=args.n_channels)

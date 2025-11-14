@@ -15,6 +15,7 @@ import onnxruntime as ort
 
 import torch
 import torch.nn.functional as F
+import time
 
 import cos.helpers.utils as utils
 from cos.helpers.constants import ALL_WINDOW_SIZES, FAR_FIELD_RADIUS
@@ -62,6 +63,64 @@ def nms(candidate_voices, nms_cutoff):
 
     return final_proposals
 
+
+def process_voice(voice, ort_sess, valid_length_fn, mixed_data, conditioning_label, args,
+                  window_idx, energy_cutoff, num_windows, curr_window_size):
+    output, energy = forward_pass_onnx(ort_sess, valid_length_fn, voice.angle, mixed_data,
+                                  conditioning_label, args)
+    results = []
+
+    if args.debug:
+        print(f"Angle {voice.angle:.2f} energy {energy}")
+        fname = f"out{window_idx}_angle{voice.angle * 180 / np.pi:.2f}.wav"
+        sf.write(os.path.join(args.writing_dir, fname), output[0], args.sr)
+
+    if energy > energy_cutoff:
+        if window_idx == num_windows - 1:
+            target_pos = np.array([
+                FAR_FIELD_RADIUS * np.cos(voice.angle),
+                FAR_FIELD_RADIUS * np.sin(voice.angle)
+            ])
+            unshifted_output, _ = utils.shift_mixture(
+                output, target_pos, args.mic_radius, args.sr, inverse=True
+            )
+            results.append(CandidateVoice(voice.angle, energy,
+                                          unshifted_output))
+        else:
+            results.append(
+                CandidateVoice(voice.angle + curr_window_size / 4, energy,
+                               output)
+            )
+            results.append(
+                CandidateVoice(voice.angle - curr_window_size / 4, energy,
+                               output)
+            )
+    return results
+
+from concurrent.futures import ThreadPoolExecutor,as_completed
+def separate(candidate_voices, ort_sess, valid_length_fn, mixed_data, conditioning_label, args,
+             window_idx, energy_cutoff, num_windows, new_candidate_voices,
+             curr_window_size, parallel=True):
+    
+    if parallel:
+        with ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(
+                    process_voice,
+                    voice, ort_sess, valid_length_fn, mixed_data, conditioning_label, args,
+                    window_idx, energy_cutoff, num_windows, curr_window_size
+                )
+                for voice in candidate_voices
+            ]
+            for future in as_completed(futures):
+                new_candidate_voices.extend(future.result())
+    else:
+        for voice in candidate_voices:
+            result = process_voice(
+                voice, ort_sess, valid_length_fn, mixed_data, conditioning_label, args,
+                window_idx, energy_cutoff, num_windows, curr_window_size
+            )
+            new_candidate_voices.extend(result)
 
 def forward_pass_onnx(ort_sess, valid_length_fn, target_angle, mixed_data, conditioning_label_onehot, args):
     """
@@ -117,12 +176,13 @@ def run_separation(mixed_data, ort_sess, valid_length_fn, args,
     """
     num_windows = len(ALL_WINDOW_SIZES) if not args.moving else 3
     starting_angles = utils.get_starting_angles(ALL_WINDOW_SIZES[0])
-    starting_angles = starting_angles[-2:]  # 45度と135度
+    # starting_angles = starting_angles[-2:]  # 45度と135度
 
     candidate_voices = [CandidateVoice(x, None, None) for x in starting_angles]
     print("candidate", candidate_voices)
     print("starting angles", starting_angles)
 
+    start = time.time()
     for window_idx in range(num_windows):
         if args.debug:
             print("---------")
@@ -134,51 +194,35 @@ def run_separation(mixed_data, ort_sess, valid_length_fn, args,
         print("window: ", curr_window_size)
         new_candidate_voices = []
 
-        for voice in candidate_voices:
-            output, energy = forward_pass_onnx(
-                ort_sess, valid_length_fn, voice.angle, mixed_data, cond, args
-            )
-
-            if args.debug:
-                print(f"Angle {voice.angle:.2f} energy {energy}")
-                fname = f"out{window_idx}_angle{voice.angle * 180 / np.pi:.2f}.wav"
-                sf.write(os.path.join(args.writing_dir, fname), output, args.sr)
-
-            if energy > energy_cutoff:
-                if window_idx == num_windows - 1:
-                    target_pos = np.array([
-                        FAR_FIELD_RADIUS * np.cos(voice.angle),
-                        FAR_FIELD_RADIUS * np.sin(voice.angle)
-                    ], dtype=np.float32)
-
-                    # 逆シフトは torch 実装を再利用
-                    unshifted_output_t, _ = utils.shift_mixture(
-                        torch.tensor(output),
-                        target_pos,
-                        args.mic_radius, args.sr,
-                        inverse=True
-                    )
-                    unshifted_output = unshifted_output_t.detach().cpu().numpy()
-                    new_candidate_voices.append(
-                        CandidateVoice(voice.angle, energy, unshifted_output)
-                    )
-                else:
-                    new_candidate_voices.append(
-                        CandidateVoice(voice.angle + curr_window_size / 4, energy, None)
-                    )
-                    new_candidate_voices.append(
-                        CandidateVoice(voice.angle - curr_window_size / 4, energy, None)
-                    )
-
+        separate(candidate_voices=candidate_voices,
+                 ort_sess=ort_sess,
+                 valid_length_fn=valid_length_fn,
+                 mixed_data=mixed_data,
+                 conditioning_label=cond,
+                 args=args,
+                 window_idx=window_idx,
+                 energy_cutoff=energy_cutoff,
+                 num_windows=num_windows,
+                 new_candidate_voices=new_candidate_voices,
+                 curr_window_size=curr_window_size
+                 )
         candidate_voices = new_candidate_voices
 
+    end = time.time()
+    print(f"run_separation: {end - start:.4f} seconds")
     return nms(candidate_voices, nms_cutoff)
+
+
 
 
 def main(args):
     print("use cuda", args.use_cuda)
     shouldSave = args.save
 
+    device = torch.device('cuda') if args.use_cuda else torch.device('cpu')
+    args.device = device
+
+    
     # ONNX セッション
     ort_sess = _make_session(args.model_onnx, use_cuda=args.use_cuda)
 
