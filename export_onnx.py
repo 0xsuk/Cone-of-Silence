@@ -1,13 +1,11 @@
 import argparse
 import torch
-import numpy as np
 from cos.training.network import CoSNetwork
 
-# --- 必要に応じて変更 ---
-OPSET = 17          # 16〜21 あたりで安定。エラー時は 16/18 も試す
-COND_DIM = 5        # conditioning の one-hot 次元（コードでは 5）
-DUMMY_T = 44100     # ダミーの時間長（動的軸にするので適当でOK）
-# -----------------------
+
+OPSET = 21
+COND_DIM = 5
+DUMMY_T = 44100
 
 def load_state_dict_safely(ckpt_path: str):
     state = torch.load(ckpt_path, map_location="cpu")
@@ -29,10 +27,11 @@ def export_onnx(ckpt_path: str, onnx_path: str, n_channels: int):
 
     # 動的軸を設定：バッチと時間長を可変に
     dynamic_axes = {
-        "audio": {0: "batch", 2: "time"},
+        "audio": {0: "batch", 2: "time_in"},
         "cond":  {0: "batch"},
-        "output": {0: "batch", 2: "time"}  # モデル出力が (B, C, T) を想定
+        "output": {0: "batch", 3: "time_out"}  # モデル出力が (B,2, C, T) を想定
     }
+    
 
     torch.onnx.export(
         model,
@@ -40,10 +39,11 @@ def export_onnx(ckpt_path: str, onnx_path: str, n_channels: int):
         onnx_path,
         export_params=True,
         opset_version=OPSET,
-        do_constant_folding=True,   # もし最適化で問題が出たら False に
+        do_constant_folding=True,
         input_names=["audio", "cond"],
         output_names=["output"],
-        dynamic_axes=dynamic_axes
+        dynamic_axes=dynamic_axes,
+        dynamo=False
     )
     print(f"Exported ONNX to: {onnx_path}")
 

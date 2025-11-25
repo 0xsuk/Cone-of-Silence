@@ -22,3 +22,5 @@ __pycache__/
 /outputs/demo_run/
 /outputs/demo_run_onnx/
 /model.onnx
+outputs/**
+*.onnx

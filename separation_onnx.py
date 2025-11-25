@@ -100,7 +100,7 @@ def process_voice(voice, ort_sess, valid_length_fn, mixed_data, conditioning_lab
 from concurrent.futures import ThreadPoolExecutor,as_completed
 def separate(candidate_voices, ort_sess, valid_length_fn, mixed_data, conditioning_label, args,
              window_idx, energy_cutoff, num_windows, new_candidate_voices,
-             curr_window_size, parallel=True):
+             curr_window_size, parallel=False):
     
     if parallel:
         with ThreadPoolExecutor() as executor:
@@ -176,7 +176,7 @@ def run_separation(mixed_data, ort_sess, valid_length_fn, args,
     """
     num_windows = len(ALL_WINDOW_SIZES) if not args.moving else 3
     starting_angles = utils.get_starting_angles(ALL_WINDOW_SIZES[0])
-    # starting_angles = starting_angles[-2:]  # 45度と135度
+    starting_angles = starting_angles[-2:]  # 45度と135度
 
     candidate_voices = [CandidateVoice(x, None, None) for x in starting_angles]
     print("candidate", candidate_voices)
