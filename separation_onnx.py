@@ -12,7 +12,7 @@ import numpy as np
 import soundfile as sf
 import librosa
 import onnxruntime as ort
-
+import json
 import torch
 import torch.nn.functional as F
 import time
@@ -33,12 +33,18 @@ CandidateVoice = namedtuple("CandidateVoice", ["angle", "energy", "data"])
 
 
 def _make_session(onnx_path: str, use_cuda: bool):
-    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if use_cuda else ["CPUExecutionProvider"]
+    
+    providers = [("ACLExecutionProvider", {"enable_fast_math": "true"})]
+    # providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if use_cuda else ["CPUExecutionProvider"]
     # CUDA が未インストールでも落ちないようフォールバック
+    so = ort.SessionOptions()
+    so.enable_profiling = True
     try:
-        return ort.InferenceSession(onnx_path, providers=providers)
-    except Exception:
-        return ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        sess = ort.InferenceSession(onnx_path, so, providers=providers)
+        print("session providers:", sess.get_providers())
+        return sess
+    except Exception as e:
+        raise e;
 
 
 def nms(candidate_voices, nms_cutoff):
@@ -215,6 +221,28 @@ def run_separation(mixed_data, ort_sess, valid_length_fn, args,
 
 
 
+def profile(sess):
+    profile_file = sess.end_profiling()
+    print("profile file:", profile_file)
+    
+    # JSON を読み込んで、どの EP がどれくらい時間を使ったか集計する
+    with open(profile_file, "r") as f:
+        data = json.load(f)
+    
+    # event 内に "args" や "cat" 等で EP 名や op 名が入っているので、それを集計
+    ep_time = {}
+    for e in data:
+        if "args" not in e:
+            continue
+        args = e["args"]
+        provider = args.get("provider")
+        dur = e.get("dur", 0)  # us 単位
+        if provider:
+            ep_time[provider] = ep_time.get(provider, 0) + dur
+    
+    for ep, dur in ep_time.items():
+        print(ep, dur / 1000.0, "ms")    
+
 def main(args):
     print("use cuda", args.use_cuda)
     shouldSave = args.save
@@ -259,6 +287,10 @@ def main(args):
             diagram_window_angle = ALL_WINDOW_SIZES[2] if args.moving else ALL_WINDOW_SIZES[-1]
             draw_diagram([], candidate_angles, diagram_window_angle,
                          os.path.join(args.writing_dir, "positions.png"))
+
+
+    profile(ort_sess)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
