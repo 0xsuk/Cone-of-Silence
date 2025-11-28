@@ -1,5 +1,6 @@
 import json
 from collections import defaultdict
+import argparse
 
 def analyze_profile(path, top=30):
     with open(path, "r") as f:
@@ -31,4 +32,9 @@ def analyze_profile(path, top=30):
         print(f"{dur/1000:.3f} ms\t{op}")
 
 if __name__ == "__main__":
-    analyze_profile("onnxruntime_profile__2025-11-28_11-14-58.json", top=30)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("json_path", help="onnxruntime_profile_....json")
+    parser.add_argument("--top", type=int, default=30, help="show top N nodes")
+    args = parser.parse_args()
+
+    analyze_profile(args.json_path, args.top)

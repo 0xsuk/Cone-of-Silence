@@ -34,8 +34,8 @@ CandidateVoice = namedtuple("CandidateVoice", ["angle", "energy", "data"])
 
 def _make_session(onnx_path: str, use_cuda: bool):
     
-    providers = [("ACLExecutionProvider", {"enable_fast_math": "true"})]
-    # providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if use_cuda else ["CPUExecutionProvider"]
+    # providers = [("ACLExecutionProvider", {"enable_fast_math": "true"})]
+    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if use_cuda else ["CPUExecutionProvider"]
     # CUDA が未インストールでも落ちないようフォールバック
     so = ort.SessionOptions()
     so.enable_profiling = True
