@@ -3,9 +3,22 @@ import torch
 from cos.training.network import CoSNetwork
 
 
-OPSET = 24
+OPSET = 23
 COND_DIM = 5
 DUMMY_T = 144724 # 3秒のオーディオ(44100*3 + valid_length() によるpadding)
+
+class CoSNetworkFixedCond(torch.nn.Module):
+    def __init__(self, base: CoSNetwork, fixed_cond: torch.Tensor):
+        super().__init__()
+        self.base = base
+        # (1, COND_DIM) を register_buffer しておくと ONNX 上は initializer になる
+        self.register_buffer("fixed_cond", fixed_cond.clone())
+
+    def forward(self, mix: torch.Tensor):
+        # バッチサイズに合わせて繰り返す
+        cond = self.fixed_cond.expand(mix.size(0), -1)
+        return self.base(mix, cond)
+
 
 def load_state_dict_safely(ckpt_path: str):
     state = torch.load(ckpt_path, map_location="cpu")
@@ -23,16 +36,19 @@ def export_onnx(ckpt_path: str, onnx_path: str, n_channels: int):
     # ダミー入力（B, C, T）と条件ラベル（B, COND_DIM）
     dummy_audio = torch.randn(1, n_channels, DUMMY_T, dtype=torch.float32)
     dummy_cond  = torch.zeros(1, COND_DIM, dtype=torch.float32)
-    dummy_cond[:, 0] = 1.0  # 適当な one-hot
+    dummy_cond[:, 0] = 1.0  # 90度を指定
 
+    wrapped = CoSNetworkFixedCond(model, dummy_cond)
+
+    
     torch.onnx.export(
-        model,
-        (dummy_audio, dummy_cond),
+        wrapped,
+        (dummy_audio,),
         onnx_path,
         export_params=True,
         opset_version=OPSET,
         do_constant_folding=True,
-        input_names=["audio", "cond"],
+        input_names=["audio"],
         output_names=["output"],
         # dynamic_axes=dynamic_axes,
         optimize=True, #default is True, only valid when dynamo=True

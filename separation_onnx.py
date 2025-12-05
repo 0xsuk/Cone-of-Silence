@@ -38,7 +38,7 @@ def _make_session(onnx_path: str, use_cuda: bool):
     providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if use_cuda else ["CPUExecutionProvider"]
     # CUDA が未インストールでも落ちないようフォールバック
     so = ort.SessionOptions()
-    so.enable_profiling = True
+    # so.enable_profiling = True
     so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     try:
         sess = ort.InferenceSession(onnx_path, so, providers=providers)
@@ -162,7 +162,8 @@ def forward_pass_onnx(ort_sess, valid_length_fn, target_angle, mixed_data, condi
     cond_np = conditioning_label_onehot.astype(np.float32)         # (1, COND_DIM)
 
     ort_inputs = {ort_sess.get_inputs()[0].name: audio_np,
-                  ort_sess.get_inputs()[1].name: cond_np}
+                  # ort_sess.get_inputs()[1].name: cond_np
+                  }
     ort_out = ort_sess.run(None, ort_inputs)[0]  # (1, C, T')
 
     # center_trim/unnormalize は torch 実装に合わせる
@@ -292,7 +293,7 @@ def main(args):
                          os.path.join(args.writing_dir, "positions.png"))
 
 
-    profile(ort_sess)
+    # profile(ort_sess)
 
 
 if __name__ == '__main__':
