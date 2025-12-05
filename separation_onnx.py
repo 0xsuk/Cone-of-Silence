@@ -39,6 +39,7 @@ def _make_session(onnx_path: str, use_cuda: bool):
     # CUDA が未インストールでも落ちないようフォールバック
     so = ort.SessionOptions()
     so.enable_profiling = True
+    so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     try:
         sess = ort.InferenceSession(onnx_path, so, providers=providers)
         print("session providers:", sess.get_providers())
@@ -150,9 +151,11 @@ def forward_pass_onnx(ort_sess, valid_length_fn, target_angle, mixed_data, condi
 
     # valid_length とパディング（元実装と同一ロジック）
     T = data_t.shape[-1]
+    print("before :", data_t.shape)
     vlen = valid_length_fn(T)
     delta = int(vlen - T)
     padded_t = F.pad(data_t, (delta // 2, delta - delta // 2))  # (1, C, vlen)
+    print("after  :", padded_t.shape)
 
     # ORT 実行
     audio_np = padded_t.detach().cpu().numpy().astype(np.float32)  # (1, C, vlen)

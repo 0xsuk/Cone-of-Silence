@@ -3,9 +3,9 @@ import torch
 from cos.training.network import CoSNetwork
 
 
-OPSET = 21
+OPSET = 24
 COND_DIM = 5
-DUMMY_T = 44100
+DUMMY_T = 144724 # 3秒のオーディオ(44100*3 + valid_length() によるpadding)
 
 def load_state_dict_safely(ckpt_path: str):
     state = torch.load(ckpt_path, map_location="cpu")
@@ -25,14 +25,6 @@ def export_onnx(ckpt_path: str, onnx_path: str, n_channels: int):
     dummy_cond  = torch.zeros(1, COND_DIM, dtype=torch.float32)
     dummy_cond[:, 0] = 1.0  # 適当な one-hot
 
-    # 動的軸を設定：バッチと時間長を可変に
-    dynamic_axes = {
-        "audio": {0: "batch", 2: "time_in"},
-        "cond":  {0: "batch"},
-        "output": {0: "batch", 3: "time_out"}  # モデル出力が (B,2, C, T) を想定
-    }
-    
-
     torch.onnx.export(
         model,
         (dummy_audio, dummy_cond),
@@ -42,8 +34,9 @@ def export_onnx(ckpt_path: str, onnx_path: str, n_channels: int):
         do_constant_folding=True,
         input_names=["audio", "cond"],
         output_names=["output"],
-        dynamic_axes=dynamic_axes,
-        dynamo=False
+        # dynamic_axes=dynamic_axes,
+        optimize=True, #default is True, only valid when dynamo=True
+        dynamo=True
     )
     print(f"Exported ONNX to: {onnx_path}")
 

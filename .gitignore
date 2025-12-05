@@ -24,3 +24,4 @@ __pycache__/
 /model.onnx
 outputs/**
 *.onnx
+/onnxruntime/
