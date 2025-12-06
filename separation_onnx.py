@@ -38,7 +38,7 @@ def _make_session(onnx_path: str, use_cuda: bool):
     providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if use_cuda else ["CPUExecutionProvider"]
     # CUDA が未インストールでも落ちないようフォールバック
     so = ort.SessionOptions()
-    # so.enable_profiling = True
+    so.enable_profiling = True
     so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     try:
         sess = ort.InferenceSession(onnx_path, so, providers=providers)
@@ -271,7 +271,7 @@ def main(args):
     temporal_chunk_size = int(args.sr * args.duration)
     num_chunks = (mixed_data.shape[1] // temporal_chunk_size) + 1
 
-    for chunk_idx in range(num_chunks):
+    for chunk_idx in range(num_chunks-1):
         curr_writing_dir = os.path.join(args.output_dir, f"{chunk_idx:03d}")
         if not os.path.exists(curr_writing_dir):
             os.makedirs(curr_writing_dir)
@@ -293,7 +293,7 @@ def main(args):
                          os.path.join(args.writing_dir, "positions.png"))
 
 
-    # profile(ort_sess)
+    profile(ort_sess)
 
 
 if __name__ == '__main__':
