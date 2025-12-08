@@ -40,6 +40,12 @@ def _make_session(onnx_path: str, use_cuda: bool):
     so = ort.SessionOptions()
     so.enable_profiling = True
     so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    
+    ## 並列
+    # so.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+    # so.inter_op_num_threads = 10
+    # so.intra_op_num_threads = 10
+    
     try:
         sess = ort.InferenceSession(onnx_path, so, providers=providers)
         print("session providers:", sess.get_providers())

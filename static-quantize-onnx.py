@@ -1,74 +1,84 @@
-import argparse
+import librosa
 import numpy as np
-import onnxruntime
-import time
-from onnxruntime.quantization import QuantFormat, QuantType, quantize_static
+import torch
+import torch.nn.functional as F
+
+from onnxruntime.quantization import (
+    quantize_static,
+    CalibrationDataReader,
+    QuantFormat,
+    QuantType,
+)
+from onnxruntime.quantization import quant_utils
+from pathlib import Path
+from cos.training.network import CoSNetwork, normalize_input
+
+SR = 44100
+N_CHANNELS = 4
+COND_DIM = 5
+DURATION = 3.0
 
 
-def benchmark(model_path):
-    session = onnxruntime.InferenceSession(model_path)
-    input_name = session.get_inputs()[0].name
+class SingleAudioDataReader(CalibrationDataReader):
+    def __init__(self, wav_path: str, onnx_model_path: str):
+        self.wav_path = wav_path
+        self._consumed = False
 
-    total = 0.0
-    runs = 10
-    input_data = np.zeros((1, 3, 224, 224), np.float32)
-    # Warming up
-    _ = session.run([], {input_name: input_data})
-    for i in range(runs):
-        start = time.perf_counter()
-        _ = session.run([], {input_name: input_data})
-        end = (time.perf_counter() - start) * 1000
-        total += end
-        print(f"{end:.2f}ms")
-    total /= runs
-    print(f"Avg: {total:.2f}ms")
+        
+        # valid_length 用
+        shape_helper = CoSNetwork(n_audio_channels=N_CHANNELS)
+        self.valid_length_fn = shape_helper.valid_length
+
+        # 入力名を取得
+        model = quant_utils.load_model_with_shape_infer(Path(onnx_model_path))
+
+        self.input_name = model.graph.input[0].name
+
+    def get_next(self):
+        if self._consumed:
+            return None
+        self._consumed = True
+
+        wav, sr = librosa.core.load(self.wav_path, mono=False, sr=SR)
+        if wav.ndim == 1:
+            wav = wav[np.newaxis, :]
+        assert wav.shape[0] == N_CHANNELS
+
+        temporal_chunk_size = int(SR * DURATION)
+        wav = wav[:, :temporal_chunk_size]
+
+        data_t = torch.tensor(wav).float().unsqueeze(0)  # (1, C, T)
+
+        data_t, means, stds = normalize_input(data_t)
+        T = data_t.shape[-1]
+        vlen = self.valid_length_fn(T)
+        delta = int(vlen - T)
+        padded_t = F.pad(data_t, (delta // 2, delta - delta // 2))  # (1, C, vlen)
+
+        audio_np = padded_t.detach().cpu().numpy().astype(np.float32)
+        return {self.input_name: audio_np}
+
+    def rewind(self):
+        self._consumed = False
 
 
-def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input_model", required=True, help="input model")
-    parser.add_argument("--output_model", required=True, help="output model")
-    parser.add_argument(
-        "--calibrate_dataset", default="./", help="calibration data set"
-    )
-    parser.add_argument(
-        "--quant_format",
-        default=QuantFormat.QDQ,
-        type=QuantFormat.from_string,
-        choices=list(QuantFormat),
-    )
-    parser.add_argument("--per_channel", default=False, type=bool)
-    args = parser.parse_args()
-    return args
+def static_quantize_single_file(
+):
+    model_fp32_path = "tmp/pdynamo_const_nodyn21.onnx"
+    model_int8_path = "tmp/sqpdynamo_const_nodyn21_u_qo.onnx"
+    dr = SingleAudioDataReader("real_multiple_speakers_4mics.wav", model_fp32_path)
 
-
-def main():
-    args = get_args()
-    input_model_path = args.input_model
-    output_model_path = args.output_model
-    calibration_dataset_path = args.calibrate_dataset
-    dr = resnet50_data_reader.ResNet50DataReader(
-        calibration_dataset_path, input_model_path
-    )
-
-    # Calibrate and quantize model
-    # Turn off model optimization during quantization
     quantize_static(
-        input_model_path,
-        output_model_path,
-        dr,
-        quant_format=args.quant_format,
-        per_channel=args.per_channel,
+        model_input=model_fp32_path,
+        model_output=model_int8_path,
+        calibration_data_reader=dr,
+        quant_format=QuantFormat.QOperator,
+        activation_type=QuantType.QUInt8, #
         weight_type=QuantType.QInt8,
+        # per_channel=True,
+        # op_types_to_quantize=["Conv", "MatMul"],
     )
-    print("Calibrated and quantized model saved.")
-
-    print("benchmarking fp32 model...")
-    benchmark(input_model_path)
-
-    print("benchmarking int8 model...")
-    benchmark(output_model_path)
+    print("saved:", model_int8_path)
 
 
-if __name__ == "__main__":
-    main()
+static_quantize_single_file()

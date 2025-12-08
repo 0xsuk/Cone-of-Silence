@@ -3,7 +3,7 @@ import torch
 from cos.training.network import CoSNetwork
 
 
-OPSET = 23
+OPSET = 21
 COND_DIM = 5
 DUMMY_T = 144724 # 3秒のオーディオ(44100*3 + valid_length() によるpadding)
 
