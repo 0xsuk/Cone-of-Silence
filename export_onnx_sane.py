@@ -30,10 +30,9 @@ def load_state_dict_safely(ckpt_path: str):
 def export_onnx(ckpt_path: str, onnx_path: str, n_channels: int):
     model = CoSNetwork(n_audio_channels=n_channels)
     model.load_state_dict(load_state_dict_safely(ckpt_path), strict=True)
-    model.eval()  # 必須
-    model.cpu()   # ONNX Export は CPU で
+    model.eval()
+    model.cpu()
 
-    # ダミー入力（B, C, T）と条件ラベル（B, COND_DIM）
     dummy_audio = torch.randn(1, n_channels, DUMMY_T, dtype=torch.float32)
     dummy_cond  = torch.zeros(1, COND_DIM, dtype=torch.float32)
     dummy_cond[:, 0] = 1.0  # 90度を指定
@@ -50,8 +49,7 @@ def export_onnx(ckpt_path: str, onnx_path: str, n_channels: int):
         do_constant_folding=True,
         input_names=["audio"],
         output_names=["output"],
-        # dynamic_axes=dynamic_axes,
-        optimize=True, #default is True, only valid when dynamo=True
+        optimize=True,
         dynamo=True
     )
     print(f"Exported ONNX to: {onnx_path}")

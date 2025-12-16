@@ -65,18 +65,18 @@ class SingleAudioDataReader(CalibrationDataReader):
 def static_quantize_single_file(
 ):
     model_fp32_path = "tmp/pdynamo_const_nodyn21.onnx"
-    model_int8_path = "tmp/sqpdynamo_const_nodyn21_u_qo.onnx"
+    model_int8_path = "tmp/sqpdynamo_const_nodyn21_u__convonly.onnx"
     dr = SingleAudioDataReader("real_multiple_speakers_4mics.wav", model_fp32_path)
 
     quantize_static(
         model_input=model_fp32_path,
         model_output=model_int8_path,
         calibration_data_reader=dr,
-        quant_format=QuantFormat.QOperator,
-        activation_type=QuantType.QUInt8, #
+        quant_format=QuantFormat.QDQ,
+        activation_type=QuantType.QUInt8,#
         weight_type=QuantType.QInt8,
         # per_channel=True,
-        # op_types_to_quantize=["Conv", "MatMul"],
+        op_types_to_quantize=["Conv"],
     )
     print("saved:", model_int8_path)
 
